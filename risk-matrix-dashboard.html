@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Risk Matrix Dashboard</title>
+
+<style>
+body { font-family: Arial, sans-serif; background:#f4f6f8; }
+.container { max-width: 980px; margin:20px auto; }
+
+.controls select { padding:6px; margin-right:10px; }
+.matrix-title { margin:8px 0; font-weight:bold; }
+
+.matrix-wrapper { position:relative; }
+.matrix {
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  gap:2px;
+}
+
+.cell {
+  height:90px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:bold;
+}
+.low { background:#43a047; color:white; }
+.medium { background:#fdd835; }
+.high { background:#e53935; color:white; }
+
+.point {
+  position:absolute;
+  transform:translate(-50%,-50%);
+  z-index:3;
+}
+.circle {
+  width:22px; height:22px;
+  background:black; border-radius:50%;
+}
+.triangle {
+  width:0;height:0;
+  border-left:11px solid transparent;
+  border-right:11px solid transparent;
+  border-bottom:22px solid #1e88e5;
+}
+.star {
+  font-size:26px;
+  color:#8e24aa;
+}
+
+svg {
+  position:absolute; top:0; left:0;
+  width:100%; height:100%;
+  pointer-events:none; z-index:2;
+}
+
+.legend { margin-top:10px; font-size:14px; }
+
+.axis-box {
+  margin-top:14px;
+  padding:12px;
+  background:#ffffff;
+  border-left:6px solid #1976d2;
+  font-size:14px;
+  line-height:1.6;
+}
+.axis-box b { color:#0d47a1; }
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h2>Risk Matrix Dashboard</h2>
+
+<div class="controls">
+RF:
+<select id="rf">
+  <option value="ALL">ทั้งหมด</option>
+  <option value="1">RF1</option>
+  <option value="2">RF2</option>
+  <option value="3">RF3</option>
+  <option value="4">RF4</option>
+  <option value="5">RF5</option>
+  <option value="6">RF6</option>
+</select>
+
+Quarter:
+<select id="q">
+  <option value="Q1">Q1/2569</option>
+  <option value="Q2">Q2/2569</option>
+  <option value="Q3">Q3/2569</option>
+  <option value="Q4">Q4/2569</option>
+</select>
+</div>
+
+<div id="title" class="matrix-title"></div>
+
+<div class="matrix-wrapper">
+<svg id="svg">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
+      <polygon points="0,0 10,5 0,10" fill="#8e24aa"/>
+    </marker>
+  </defs>
+</svg>
+<div id="matrix" class="matrix"></div>
+</div>
+
+<div class="legend">
+● ดำ = Pre‑Management &nbsp;
+▲ ฟ้า = Post‑Management &nbsp;
+★ ม่วง = L‑Qx × I‑Qx
+</div>
+
+<div id="axisInfo" class="axis-box"></div>
+
+</div>
+
+<script>
+const size = 5;
+
+/* ===== STATIC RAW DATA ===== */
+const data = [
+  { rf:1, pre:{L:5,I:5}, post:{L:2,I:2}, Q1:{L:1.26,I:1} },
+  { rf:2, pre:{L:5,I:4}, post:{L:2,I:1}, Q1:{L:1,I:1} },
+  { rf:3, pre:{L:5,I:4}, post:{L:2,I:1}, Q1:{L:2.47,I:1} },
+  { rf:4, pre:{L:5,I:4}, post:{L:2,I:1}, Q1:{L:1.6,I:1} },
+  { rf:5, pre:{L:4,I:3}, post:{L:1,I:1}, Q1:{L:1,I:3} },
+  { rf:6, pre:{L:4,I:3}, post:{L:2,I:2}, Q1:{L:1,I:1} }
+];
+
+/* ===== AXIS MEANING (จากข้อความที่คุณให้มา) ===== */
+const axisMeaning = {
+  1: {
+    likelihood: "ความสำเร็จการดำเนินงานตามแผนงานบริหารความเสี่ยง",
+    impact: "ไม่สามารถสร้างมูลค่าเพิ่มในธุรกิจหลัก (core regulated business) ได้ตามเป้าหมายที่องค์กรกำหนด"
+  },
+  2: {
+    likelihood: "ความสำเร็จการดำเนินงานตามแผนงานบริหารความเสี่ยง",
+    impact: "ไม่สามารถสร้างรายได้จากธุรกิจ B2B, B2C, ThaiSkill และรายได้ธุรกิจเกี่ยวเนื่องจากลูกค้าธุรกิจ Data Center ได้ตามเป้าหมาย"
+  },
+  3: {
+    likelihood: "ความสำเร็จการดำเนินงานตามแผนงานบริหารความเสี่ยง",
+    impact: "ไม่สามารถสร้าง Grid Capacity ให้เพียงพอรองรับความต้องการใหม่ในพื้นที่ EEC และความพร้อมเพื่อรองรับการซื้อขายพลังงาน Direct PPA ผ่าน TPA และไม่สามารถลดก๊าซเรือนกระจกองค์กรได้ตามเป้าหมายที่กำหนด"
+  },
+  4: {
+    likelihood: "ความสำเร็จการดำเนินงานตามแผนงานบริหารความเสี่ยง",
+    impact: "ไม่สามารถดำเนินงานในการจัดหาและให้บริการพลังงานไฟฟ้าในพื้นที่นิคมอุตสาหกรรม และดำเนินงานตามแผนบูรณาการดำเนินธุรกิจของ กฟภ. เพื่อจัดตั้งบริษัทใหม่ได้ตามเป้าหมาย"
+  },
+  5: {
+    likelihood: "ความสำเร็จการดำเนินงานตามแผนงานบริหารความเสี่ยง",
+    impact: "กลุ่มเป้าหมายที่มีส่วนร่วมในการพัฒนา Use Case ไม่สามารถผ่านการประเมินความรู้และทักษะตามเกณฑ์ที่กำหนด จากการพัฒนาทักษะด้านดิจิทัลหรือเทคโนโลยีปัญญาประดิษฐ์ (AI)"
+  },
+  6: {
+    likelihood: "ความสำเร็จการดำเนินงานตามแผนงานบริหารความเสี่ยง",
+    impact: "ไม่สามารถบริหารค่า SAIFI และ SAIDI ของจุดรวมงาน กฟส.เกาะสมุยได้ตามเป้าหมาย"
+  }
+};
+
+const matrix = document.getElementById("matrix");
+const svg = document.getElementById("svg");
+const rfSel = document.getElementById("rf");
+const qSel = document.getElementById("q");
+const title = document.getElementById("title");
+const axisBox = document.getElementById("axisInfo");
+
+const clamp = v => Math.min(5, Math.max(1, v));
+
+function riskLevel(s){
+  if (s <= 4) return "low";
+  if (s <= 14) return "medium";
+  return "high";
+}
+
+function drawMatrix(){
+  matrix.innerHTML="";
+  svg.innerHTML = svg.innerHTML.split("</defs>")[0]+"</defs>";
+  for(let y=5;y>=1;y--){
+    for(let x=1;x<=5;x++){
+      const c=document.createElement("div");
+      c.className="cell "+riskLevel(x*y);
+      c.textContent=x*y;
+      matrix.appendChild(c);
+    }
+  }
+}
+
+function pos(L,I){
+  L=clamp(L); I=clamp(I);
+  return { x:(L-0.5)*20, y:(5-I+0.5)*20 };
+}
+
+function drawArrow(a,b){
+  const l=document.createElementNS("http://www.w3.org/2000/svg","line");
+  l.setAttribute("x1",a.x+"%");
+  l.setAttribute("y1",a.y+"%");
+  l.setAttribute("x2",b.x+"%");
+  l.setAttribute("y2",b.y+"%");
+  l.setAttribute("stroke","#8e24aa");
+  l.setAttribute("stroke-width","3");
+  l.setAttribute("marker-end","url(#arrow)");
+  svg.appendChild(l);
+}
+
+function plot(L,I,html,off){
+  L=clamp(L); I=clamp(I);
+  const p=document.createElement("div");
+  p.className="point";
+  p.innerHTML=html;
+  p.style.left=`calc(${(L-0.5)*20}% + ${off}px)`;
+  p.style.top=`calc(${(5-I+0.5)*20}% + ${off}px)`;
+  matrix.appendChild(p);
+}
+
+function render(){
+  drawMatrix();
+  const rf = rfSel.value;
+  const q = qSel.value;
+
+  title.textContent =
+    `Pre / Post → ${q}/2569 | ` +
+    (rf==="ALL" ? "ทุก RF" : "RF"+rf);
+
+  // Axis meaning
+  if (rf === "ALL") {
+    axisBox.innerHTML =
+      "<b>ความหมายแกนโอกาส (Likelihood):</b> ความสำเร็จในการดำเนินงานตามแผนบริหารความเสี่ยงขององค์กร<br>" +
+      "<b>ความหมายแกนผลกระทบ (Impact):</b> ผลกระทบต่อความสามารถในการบรรลุเป้าหมายเชิงยุทธศาสตร์ขององค์กร";
+  } else {
+    axisBox.innerHTML =
+      "<b>ความหมายแกนโอกาส (Likelihood):</b> " + axisMeaning[rf].likelihood + "<br>" +
+      "<b>ความหมายแกนผลกระทบ (Impact):</b> " + axisMeaning[rf].impact;
+  }
+
+  data.filter(d=>rf==="ALL"||d.rf==rf).forEach((d,i)=>{
+    plot(d.pre.L,  d.pre.I,  '<div class="circle"></div>',   i*4);
+    plot(d.post.L, d.post.I, '<div class="triangle"></div>', i*4+6);
+
+    if(d[q]) {
+      drawArrow(pos(d.pre.L,d.pre.I), pos(d[q].L,d[q].I));
+      plot(d[q].L, d[q].I, '<div class="star">★</div>', i*4+14);
+    }
+  });
+}
+
+rfSel.onchange = render;
+qSel.onchange  = render;
+
+render();
+</script>
+
+</body>
+</html>
